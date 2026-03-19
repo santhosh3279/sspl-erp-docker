@@ -8,6 +8,9 @@ on:
         required: true
         default: 'v1.0.0'
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -19,8 +22,6 @@ jobs:
 
       - name: Checkout this repo
         uses: actions/checkout@v4
-        with:
-          node-version: '24'
 
       - name: Checkout frappe_docker
         uses: actions/checkout@v4
@@ -64,6 +65,3 @@ jobs:
           package-name: sspl-erpnext
           package-type: container
           min-versions-to-keep: 3
-
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
