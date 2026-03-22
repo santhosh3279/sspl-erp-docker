@@ -22,34 +22,47 @@ jobs:
     permissions:
       contents: read
       packages: write
-    
+
     steps:
       - name: Checkout this repo
         uses: actions/checkout@v4
-      
+
       - name: Checkout frappe_docker
         uses: actions/checkout@v4
         with:
           repository: frappe/frappe_docker
           ref: main
           path: frappe_docker
-      
+
+      - name: Patch Containerfile to build ssplbilling frontend assets
+        run: |
+          python3 -c "
+          with open('frappe_docker/images/custom/Containerfile', 'r') as f:
+              content = f.read()
+          content = content.replace(
+              'find apps -mindepth 1 -path \"*/.git\" | xargs rm -fr',
+              'bench build && \\\\\n  find apps -mindepth 1 -path \"*/.git\" | xargs rm -fr'
+          )
+          with open('frappe_docker/images/custom/Containerfile', 'w') as f:
+              f.write(content)
+          "
+
       - name: Prepare apps.json
         run: |
           echo "APPS_JSON_BASE64=$(base64 -w 0 apps.json)" >> $GITHUB_ENV
           echo "APPS_JSON_HASH=$(sha256sum apps.json | cut -d' ' -f1)" >> $GITHUB_ENV
           echo "Apps JSON Hash: $(sha256sum apps.json | cut -d' ' -f1)"
-      
+
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-      
+
       - name: Build and Push
         uses: docker/build-push-action@v6
         with:
@@ -66,7 +79,7 @@ jobs:
             APPS_JSON_HASH=${{ env.APPS_JSON_HASH }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      
+
       - name: Delete old image versions (keep last 3)
         uses: actions/delete-package-versions@v5
         with:
