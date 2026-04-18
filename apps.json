@@ -1,7 +1,7 @@
 [
   {
     "url": "https://github.com/frappe/erpnext",
-    "branch": "version-16.14.0"
+    "branch": "version-16"
   },
   {
     "url": "https://github.com/resilient-tech/india-compliance",
