@@ -28,7 +28,7 @@ jobs:
           repository: frappe/frappe_docker
           ref: bb3faf8a250da1d57a16d25e69ef34aa96b8b7cd
           path: frappe_docker
-      - name: Patch Containerfile to install fonts
+      - name: Patch Containerfile to build frontend assets + install fonts
         run: |
           python3 -c "
           with open('frappe_docker/images/custom/Containerfile', 'r') as f:
@@ -49,17 +49,21 @@ jobs:
                   patched.append('    && fc-cache -f -v \\\\\n')
                   patched.append('    && rm -rf /var/lib/apt/lists/*\n')
                   patched.append('\n')
+              # Add bench build before .git cleanup
+              if 'find apps -mindepth 1 -path' in line and '.git' in line:
+                  patched[-1] = line.replace(
+                      'find apps -mindepth 1 -path \"*/.git\" | xargs rm -fr',
+                      'bench build && \\\\\n  find apps -mindepth 1 -path \"*/.git\" | xargs rm -fr'
+                  )
           
           with open('frappe_docker/images/custom/Containerfile', 'w') as f:
               f.writelines(patched)
           "
-      - name: Verify apps.json
-        run: |
-          echo "Apps to be installed:"
-          cat apps.json
       - name: Prepare apps.json
         run: |
           echo "APPS_JSON_BASE64=$(base64 -w 0 apps.json)" >> $GITHUB_ENV
+          echo "APPS_JSON_HASH=$(sha256sum apps.json | cut -d' ' -f1)" >> $GITHUB_ENV
+          echo "Apps JSON Hash: $(sha256sum apps.json | cut -d' ' -f1)"
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -81,6 +85,9 @@ jobs:
           build-args: |
             APPS_JSON_BASE64=${{ env.APPS_JSON_BASE64 }}
             FRAPPE_BRANCH=version-16
+            APPS_JSON_HASH=${{ env.APPS_JSON_HASH }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
       - name: Delete old image versions (keep last 3)
         uses: actions/delete-package-versions@v5
         with:
