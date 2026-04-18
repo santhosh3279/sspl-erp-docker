@@ -22,103 +22,56 @@ jobs:
     steps:
       - name: Checkout this repo
         uses: actions/checkout@v4
-      
       - name: Checkout frappe_docker
         uses: actions/checkout@v4
         with:
           repository: frappe/frappe_docker
           ref: main
           path: frappe_docker
-      
-      - name: Debug - Show original Containerfile
+      - name: Patch Containerfile to build frontend assets + install fonts
         run: |
-          echo "=== ORIGINAL CONTAINERFILE ==="
-          cat frappe_docker/images/custom/Containerfile
-          echo ""
-          echo "=== All FROM lines ==="
-          grep -n "^FROM" frappe_docker/images/custom/Containerfile || true
-      
-      - name: Patch Containerfile to install fonts + build assets
-        run: |
-          python3 << 'PYTHON_EOF'
-          import re
-          
+          python3 -c "
           with open('frappe_docker/images/custom/Containerfile', 'r') as f:
-              content = f.read()
+              lines = f.readlines()
           
-          lines = content.split('\n')
+          # Find the line after 'FROM frappe/erpnext' to insert font installation
           patched = []
-          fonts_added = False
-          build_added = False
-          
           for i, line in enumerate(lines):
-              # Add bench build as separate RUN BEFORE the .git cleanup line
-              if not build_added and 'find apps' in line and '.git' in line and 'xargs rm' in line:
-                  patched.append('')
-                  patched.append('# Build frontend assets for all apps')
-                  patched.append('RUN cd /home/frappe/frappe-bench && bench build')
-                  patched.append('')
-                  build_added = True
-              
               patched.append(line)
-              
-              # Add fonts after ANY FROM statement (not just frappe/erpnext)
-              if not fonts_added and line.strip().startswith('FROM '):
-                  patched.append('')
-                  patched.append('# Install fonts for wkhtmltopdf PDF rendering')
-                  patched.append('RUN apt-get update && apt-get install -y --no-install-recommends \\')
-                  patched.append('    fonts-liberation \\')
-                  patched.append('    fonts-noto \\')
-                  patched.append('    fonts-dejavu-core \\')
-                  patched.append('    && fc-cache -f -v \\')
-                  patched.append('    && rm -rf /var/lib/apt/lists/*')
-                  patched.append('')
-                  fonts_added = True
-          
-          result = '\n'.join(patched)
+              # Insert font installation right after FROM statement
+              if line.strip().startswith('FROM frappe/erpnext'):
+                  patched.append('\n')
+                  patched.append('# Install fonts for wkhtmltopdf PDF rendering\n')
+                  patched.append('RUN apt-get update && apt-get install -y --no-install-recommends \\\\\n')
+                  patched.append('    fonts-liberation \\\\\n')
+                  patched.append('    fonts-noto \\\\\n')
+                  patched.append('    fonts-dejavu-core \\\\\n')
+                  patched.append('    && fc-cache -f -v \\\\\n')
+                  patched.append('    && rm -rf /var/lib/apt/lists/*\n')
+                  patched.append('\n')
+              # Add bench build before .git cleanup
+              if 'find apps -mindepth 1 -path' in line and '.git' in line:
+                  patched[-1] = line.replace(
+                      'find apps -mindepth 1 -path \"*/.git\" | xargs rm -fr',
+                      'bench build && \\\\\n  find apps -mindepth 1 -path \"*/.git\" | xargs rm -fr'
+                  )
           
           with open('frappe_docker/images/custom/Containerfile', 'w') as f:
-              f.write(result)
-          
-          print(f"✓ Fonts added: {fonts_added}")
-          print(f"✓ Bench build added: {build_added}")
-          
-          if not fonts_added:
-              print("WARNING: No FROM statement found!")
-              exit(1)
-          if not build_added:
-              print("WARNING: .git cleanup line not found!")
-              exit(1)
-          
-          PYTHON_EOF
-      
-      - name: Debug - Show patched Containerfile
-        run: |
-          echo "=== PATCHED CONTAINERFILE ==="
-          cat frappe_docker/images/custom/Containerfile
-          echo ""
-          echo "=== Bench build section ==="
-          grep -A2 -B2 "bench build" frappe_docker/images/custom/Containerfile || echo "ERROR: bench build not found!"
-          echo ""
-          echo "=== Font installation section ==="
-          grep -A2 -B2 "fonts-liberation" frappe_docker/images/custom/Containerfile || echo "ERROR: fonts not found!"
-      
+              f.writelines(patched)
+          "
       - name: Prepare apps.json
         run: |
           echo "APPS_JSON_BASE64=$(base64 -w 0 apps.json)" >> $GITHUB_ENV
           echo "APPS_JSON_HASH=$(sha256sum apps.json | cut -d' ' -f1)" >> $GITHUB_ENV
           echo "Apps JSON Hash: $(sha256sum apps.json | cut -d' ' -f1)"
-      
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-      
       - name: Build and Push
         uses: docker/build-push-action@v6
         with:
@@ -135,7 +88,6 @@ jobs:
             APPS_JSON_HASH=${{ env.APPS_JSON_HASH }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      
       - name: Delete old image versions (keep last 3)
         uses: actions/delete-package-versions@v5
         with:
