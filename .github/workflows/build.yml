@@ -62,8 +62,6 @@ jobs:
       - name: Prepare apps.json
         run: |
           echo "APPS_JSON_BASE64=$(base64 -w 0 apps.json)" >> $GITHUB_ENV
-          echo "APPS_JSON_HASH=$(sha256sum apps.json | cut -d' ' -f1)" >> $GITHUB_ENV
-          echo "Apps JSON Hash: $(sha256sum apps.json | cut -d' ' -f1)"
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -85,9 +83,6 @@ jobs:
           build-args: |
             APPS_JSON_BASE64=${{ env.APPS_JSON_BASE64 }}
             FRAPPE_BRANCH=version-16
-            APPS_JSON_HASH=${{ env.APPS_JSON_HASH }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
       - name: Delete old image versions (keep last 3)
         uses: actions/delete-package-versions@v5
         with:
