@@ -14,5 +14,9 @@
   {
     "url": "https://github.com/santhosh3279/printer_server_configuration.git",
     "branch": "version-16"
+  },
+  {
+    "url": "https://github.com/shridarpatil/frappe_whatsapp",
+    "branch": "master"
   }
 ]
