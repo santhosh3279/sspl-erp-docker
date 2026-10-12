@@ -16,10 +16,6 @@
     "branch": "version-16"
   },
   {
-    "url": "https://github.com/santhosh3279/frappe_whatsapp.git",
-    "branch": "master"
-  },
-  {
     "url": "https://github.com/santhosh3279/hrms.git",
     "branch": "v16.16.0"
   }
