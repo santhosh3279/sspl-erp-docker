@@ -18,5 +18,14 @@
   {
     "url": "https://github.com/santhosh3279/hrms.git",
     "branch": "version-16"
+  },
+  {
+    "url": "https://github.com/santhosh3279/india-banking.git",
+    "branch": "version-16"
+  },
+  {
+    "url": "https://github.com/santhosh3279/india-banking-connector.git",
+    "branch": "version-16"
   }
+  
 ]
