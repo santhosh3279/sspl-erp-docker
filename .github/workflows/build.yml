@@ -25,8 +25,8 @@ jobs:
       - name: Checkout frappe_docker
         uses: actions/checkout@v4
         with:
-          repository: frappe/frappe_docker
-          ref: bb3faf8a250da1d57a16d25e69ef34aa96b8b7cd
+          repository: santhosh3279/frappe_docker
+          ref: 9fd1f48ad4eb10d201cec68d00139302e8ca37b4
           path: frappe_docker
       - name: Patch nginx template to keep port in socket.io Origin
         # Upstream sets Origin to ${FRAPPE_SITE_NAME_HEADER} (site name = IP, no port), so on a
@@ -66,10 +66,22 @@ jobs:
           with open('frappe_docker/images/custom/Containerfile', 'w') as f:
               f.writelines(patched)
           "
-      - name: Prepare apps.json
+      - name: Patch Containerfile so Studio frontend build finds socketio_port
+        # Frappe >= v16.60.0 Studio imports socketio_port from common_site_config.json
+        # at build time; the stock Containerfile writes "{}" there, which fails the vite build.
         run: |
-          echo "APPS_JSON_BASE64=$(base64 -w 0 apps.json)" >> $GITHUB_ENV
-          echo "APPS_JSON_HASH=$(sha256sum apps.json | cut -d' ' -f1)" >> $GITHUB_ENV
+          python3 - <<'EOF'
+          p = 'frappe_docker/images/custom/Containerfile'
+          s = open(p).read()
+          old = 'echo "{}" > sites/common_site_config.json'
+          new = """echo '{"socketio_port": 9000}' > sites/common_site_config.json"""
+          assert old in s, 'common_site_config line not found in Containerfile'
+          open(p, 'w').write(s.replace(old, new))
+          EOF
+          grep -n common_site_config frappe_docker/images/custom/Containerfile
+      - name: Validate apps.json
+        run: |
+          python3 -m json.tool apps.json > /dev/null
           echo "Apps JSON Hash: $(sha256sum apps.json | cut -d' ' -f1)"
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -89,10 +101,16 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository_owner }}/sspl-erpnext:${{ github.event.inputs.version }}
             ghcr.io/${{ github.repository_owner }}/sspl-erpnext:latest
+          # Newer frappe_docker reads apps.json from a build secret, not a build-arg.
+          # Without it the build still succeeds but the image contains only frappe.
+          secret-files: |
+            apps_json=${{ github.workspace }}/apps.json
+          # Secret contents are not part of the layer cache key and the app branches move,
+          # so bust the bench layer on every run to always clone fresh app code.
           build-args: |
-            APPS_JSON_BASE64=${{ env.APPS_JSON_BASE64 }}
-            FRAPPE_BRANCH=version-16
-            APPS_JSON_HASH=${{ env.APPS_JSON_HASH }}
+            FRAPPE_BRANCH=sspl-version-16
+            FRAPPE_PATH=https://github.com/santhosh3279/frappe
+            CACHE_BUST=${{ github.run_id }}-${{ github.run_attempt }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Delete old image versions (keep last 3)
