@@ -63,7 +63,25 @@ jobs:
 
           old = 'find apps -mindepth 1 -path "*/.git" | xargs rm -fr'
           assert s.count(old) == 1, '.git cleanup line not found in Containerfile'
-          s = s.replace(old, 'bench build && \\\n  ' + old)
+          # node_modules are build-only, except two that run at runtime:
+          #   apps/frappe/node_modules - socketio.js (websocket) and the Website Theme
+          #     compiler (generate_bootstrap_theme.js needs sass)
+          #   apps/frappe/studio/frontend/node_modules - publishing a custom Studio app,
+          #     and bench migrate (after_migrate), run `yarn build-studio-app` there
+          # The rest (~2.3 GB: frappe flow/island-toolchain, hrms frontend/roster,
+          # erpnext banking, ssplbilling frontend) is dropped once bench build has
+          # emitted the dist bundles.
+          prune = ('find apps -type d -name node_modules -prune '
+                   '! -path apps/frappe/node_modules '
+                   '! -path apps/frappe/studio/frontend/node_modules '
+                   '-exec rm -rf {} + && \\\n  ')
+          s = s.replace(old, 'bench build && \\\n  ' + prune + old)
+
+          # bench init would also build all assets; the explicit bench build above
+          # (after common_site_config.json is written) is the only one needed.
+          init = '    --no-backups \\\n'
+          assert s.count(init) == 1, 'bench init --no-backups line not found in Containerfile'
+          s = s.replace(init, init + '    --skip-assets \\\n')
 
           open(p, 'w').write(s)
           EOF
@@ -114,8 +132,6 @@ jobs:
             FRAPPE_BRANCH=sspl-version-16
             FRAPPE_PATH=https://github.com/santhosh3279/frappe
             CACHE_BUST=${{ github.run_id }}-${{ github.run_attempt }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
       - name: Delete old image versions (keep last 3)
         uses: actions/delete-package-versions@v5
         with:
